@@ -268,6 +268,60 @@ function nextRace(races) {
   return races.find(r => +raceDate(r) + SESSION_LEN.Race > now) || null;
 }
 
+// ---------------------------------------------------------------- Vorläufige Ergebnisse
+// Jolpica trägt Rennen oft erst Stunden später ein – bis dahin kommt das Ergebnis aus OpenF1
+const fmtDuration = sec => {
+  const h = Math.floor(sec / 3600), m = Math.floor(sec / 60) % 60, x = (sec % 60).toFixed(3).padStart(6, '0');
+  return h ? `${h}:${String(m).padStart(2, '0')}:${x}` : `${m}:${x}`;
+};
+const provCache = {};
+function provisionalResults(season) {
+  if (+season < 2023) return Promise.resolve([]);
+  return (provCache[season] ||= (async () => {
+    const now = Date.now();
+    const races = (await schedule(season)).filter(r => +raceDate(r) + 3 * HOUR < now && now - raceDate(r) < 14 * DAY);
+    if (!races.length) return [];
+    const have = new Set((await winners(season).catch(() => [])).map(r => r.round));
+    const missing = races.filter(r => !have.has(r.round));
+    if (!missing.length) return [];
+    const [sessions, ds] = await Promise.all([of1(`/sessions?year=${season}&session_type=Race`, 30 * MIN), driverStandings(season)]);
+    const byCode = Object.fromEntries(ds.map(d => [d.Driver.code, d]));
+    const out = [];
+    for (const race of missing) {
+      const sess = sessions.find(x => x.session_name === 'Race' && x.date_start?.slice(0, 10) === race.date);
+      if (!sess) continue;
+      const [res, drivers] = await Promise.all([of1(`/session_result?session_key=${sess.session_key}`, 15 * MIN), of1(`/drivers?session_key=${sess.session_key}`, DAY)]);
+      if (!res.length) continue;
+      const byNum = Object.fromEntries(drivers.map(d => [d.driver_number, d]));
+      const leaderLaps = Math.max(...res.map(r => r.number_of_laps || 0));
+      const sorted = [...res].sort((a, b) => (a.position ?? 99) - (b.position ?? 99) || (b.number_of_laps || 0) - (a.number_of_laps || 0));
+      const Results = sorted.map((r, i) => {
+        const d = byNum[r.driver_number] || {};
+        const st = byCode[d.name_acronym];
+        const out = r.dsq ? 'Disqualified' : r.dns ? 'Did not start' : r.dnf ? 'Retired' : null;
+        const gap = Array.isArray(r.gap_to_leader) ? r.gap_to_leader.at(-1) : r.gap_to_leader;
+        const down = leaderLaps - (r.number_of_laps || 0);
+        let status = out || 'Finished', Time;
+        if (!out) {
+          if (r.position === 1 && r.duration) Time = { time: fmtDuration(r.duration) };
+          else if (down > 0) status = `+${down} Lap${down > 1 ? 's' : ''}`;
+          else if (typeof gap === 'number') Time = { time: '+' + gap.toFixed(3) };
+        }
+        const pos = String(r.position ?? i + 1);
+        return {
+          number: String(r.driver_number), position: pos, positionText: out && r.position == null ? (r.dsq ? 'D' : r.dns ? 'W' : 'R') : pos,
+          points: String(r.points ?? 0), grid: null, laps: String(r.number_of_laps ?? ''), status, Time,
+          Driver: st?.Driver || { driverId: '', code: d.name_acronym, givenName: d.first_name || '', familyName: d.last_name || '', nationality: '' },
+          Constructor: st?.Constructors.at(-1) || { constructorId: '', name: d.team_name || '' },
+        };
+      });
+      out.push({ ...race, provisional: true, Results });
+    }
+    return out;
+  })().catch(() => []));
+}
+const provNote = '<p class="note small">Vorläufiges Ergebnis aus dem offiziellen Timing (OpenF1). Die Datenbank (Jolpica) hat das Rennen noch nicht eingetragen – WM-Stände und Startplätze folgen, sobald das passiert.</p>';
+
 // ---------------------------------------------------------------- Übersicht
 views.overview = async () => {
   const s = state.season;
@@ -275,6 +329,8 @@ views.overview = async () => {
   const next = nextRace(races);
   let last = null;
   try { last = (await erg(`/${s}/last/results.json`)).RaceTable.Races[0]; } catch {}
+  const prov = (await provisionalResults(s)).at(-1);
+  if (prov && (!last || +prov.round > +last.round)) last = prov;
 
   let hero;
   if (next) {
@@ -306,7 +362,7 @@ views.overview = async () => {
     hero = `<section class="hero"><div><h1>Saison ${esc(s)}</h1><p class="muted">Noch keine Rennen gefahren.</p></div></section>`;
   }
 
-  const podium = last?.Results ? `<div class="card"><h2>Letztes Rennen: ${esc(last.raceName)}</h2>
+  const podium = last?.Results ? `<div class="card"><h2>Letztes Rennen: ${esc(last.raceName)}${last.provisional ? ' <span class="badge">vorläufig</span>' : ''}</h2>
     <div class="podium">${[1, 0, 2].map(i => {
       const r = last.Results[i]; if (!r) return '<div></div>';
       return `<div class="step p${i + 1}" style="cursor:pointer" onclick="showDriver('${esc(r.Driver.driverId)}')">
@@ -371,8 +427,9 @@ views.overview.after = () => {
 // ---------------------------------------------------------------- Kalender
 views.calendar = async () => {
   const s = state.season;
-  const [races, wins] = await Promise.all([schedule(s), winners(s).catch(() => [])]);
-  const winBy = Object.fromEntries(wins.map(r => [r.round, r.Results[0]]));
+  const [races, jw, prov] = await Promise.all([schedule(s), winners(s).catch(() => []), provisionalResults(s)]);
+  const wins = [...jw, ...prov];
+  const winBy = Object.fromEntries(wins.map(r => [r.round, { ...r.Results[0], provisional: r.provisional }]));
   const next = nextRace(races);
   const cards = races.map(r => {
     const sess = sessionsOf(r);
@@ -380,7 +437,7 @@ views.calendar = async () => {
     const isNext = next && next.round === r.round;
     const sprint = r.Sprint ? '<span class="badge sprint">Sprint</span> ' : '';
     const status = w
-      ? `<div class="winner">🏆 ${natFlag(w.Driver.nationality)} ${driverName(w.Driver)} <span class="muted small">· ${esc(w.Constructor.name)}</span></div>`
+      ? `<div class="winner">🏆 ${natFlag(w.Driver.nationality)} ${driverName(w.Driver)} <span class="muted small">· ${esc(w.Constructor.name)}</span>${w.provisional ? ' <span class="badge">vorläufig</span>' : ''}</div>`
       : isNext ? `<div class="winner"><span class="badge red">Nächstes Rennen</span></div>` : '';
     const href = w ? `#/results/${r.round}` : `#/circuits/${r.Circuit.circuitId}`;
     return `<a class="card click race-card ${isNext ? 'next' : w ? 'past' : ''}" href="${href}" style="text-decoration:none">
@@ -525,7 +582,8 @@ views.teamstandings.after = async () => {
 // ---------------------------------------------------------------- Ergebnisse
 views.results = async (round, tab = 'race') => {
   const s = state.season;
-  const [races, wins] = await Promise.all([schedule(s), winners(s).catch(() => [])]);
+  const [races, jw, prov] = await Promise.all([schedule(s), winners(s).catch(() => []), provisionalResults(s)]);
+  const wins = [...jw, ...prov].sort((a, b) => a.round - b.round);
   const done = new Set(wins.map(r => r.round));
   if (!wins.length) return `<h1>Ergebnisse ${esc(s)}</h1><p class="muted">Noch keine Rennergebnisse vorhanden.</p>`;
   round = round && races.some(r => r.round === round) ? round : wins.at(-1).round;
@@ -568,7 +626,7 @@ function resultTable(results, sprint = false) {
       <td class="pos">${esc(r.positionText)}</td><td class="muted">${esc(r.number)}</td>
       <td><span class="teambar" style="background:${col}"></span>${natFlag(r.Driver.nationality)} ${driverName(r.Driver)} ${r === fastest ? '<span class="fl" title="Schnellste Runde">⏱ SR</span>' : ''}</td>
       <td class="muted">${esc(r.Constructor.name)}</td>
-      <td class="num">${grid || 'Box'} ${dTxt}</td><td class="num">${esc(r.laps)}</td>
+      <td class="num">${r.grid == null ? '–' : grid || 'Box'} ${dTxt}</td><td class="num">${esc(r.laps)}</td>
       <td>${timeOrStatus(r)}</td>
       <td class="muted small">${r.FastestLap?.Time?.time ? esc(r.FastestLap.Time.time) : ''}</td>
       <td class="num"><b>${+r.points ? esc(r.points) : ''}</b></td></tr>`;
@@ -579,8 +637,9 @@ function resultTable(results, sprint = false) {
 
 const resultTabs = {
   async race(s, round) {
-    const race = (await ergRaces(`/${s}/${round}/results.json`))[0];
-    return race ? resultTable(race.Results) : '<p class="muted">Keine Daten.</p>';
+    const race = (await ergRaces(`/${s}/${round}/results.json`))[0] || (await provisionalResults(s)).find(r => r.round === round);
+    if (!race) return '<p class="muted">Keine Daten.</p>';
+    return (race.provisional ? provNote : '') + resultTable(race.Results);
   },
   async sprint(s, round) {
     const race = (await ergRaces(`/${s}/${round}/sprint.json`))[0];
@@ -1000,6 +1059,7 @@ function initSeasonSelect() {
   };
 }
 $('#refresh').onclick = () => {
+  for (const k in provCache) delete provCache[k];
   Cache.clear(k => k.includes(`/${NOW_YEAR}`) || k.includes('/current') || k.includes('latest') || k.startsWith(OF1 + '/sessions'));
   render();
 };
