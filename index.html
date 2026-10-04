@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>F1 Hub</title>
+<link rel="icon" href="icon.png">
+<link rel="apple-touch-icon" href="icon.png">
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="theme-color" content="#e10600">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Titillium+Web:wght@400;600;700;900&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+<link rel="stylesheet" href="live.css">
+</head>
+<body>
+<header class="topbar">
+  <div class="brand"><span class="logo">F1</span><span class="brand-text">HUB</span></div>
+  <nav id="nav">
+    <a href="#/live" data-r="live" id="nav-live" class="nav-live hidden">● Live</a>
+    <a href="#/overview" data-r="overview">Übersicht</a>
+    <a href="#/news" data-r="news" id="nav-news">News</a>
+    <a href="#/calendar" data-r="calendar">Kalender</a>
+    <a href="#/standings" data-r="standings">Fahrer-WM</a>
+    <a href="#/teamstandings" data-r="teamstandings">Team-WM</a>
+    <a href="#/results" data-r="results">Ergebnisse</a>
+    <a href="#/drivers" data-r="drivers">Fahrer</a>
+    <a href="#/teams" data-r="teams">Teams</a>
+    <a href="#/circuits" data-r="circuits">Strecken</a>
+    <a href="#/analysis" data-r="analysis">Analyse</a>
+    <a href="#/telemetry" data-r="telemetry">Telemetrie</a>
+    <a href="#/duel" data-r="duel">Duelle</a>
+    <a href="#/compare" data-r="compare">Vergleich</a>
+    <a href="#/champions" data-r="champions">Weltmeister</a>
+  </nav>
+  <div class="controls">
+    <select id="season" title="Saison"></select>
+    <button id="refresh" title="Aktuelle Daten neu laden">⟳</button>
+  </div>
+</header>
+<main id="view"></main>
+<div id="modal" class="modal hidden"><div class="modal-box"><button class="modal-close" aria-label="Schließen">✕</button><div class="modal-body"></div></div></div>
+<footer>
+  Daten: <a href="https://github.com/jolpica/jolpica-f1" target="_blank" rel="noopener">Jolpica-F1 API</a> ·
+  <a href="https://openf1.org" target="_blank" rel="noopener">OpenF1</a> · Flaggen: flagcdn.com ·
+  Inoffiziell, nicht mit der Formel 1 verbunden.
+</footer>
+<script src="champions.js"></script>
+<script src="app.js"></script>
+<script src="features.js"></script>
+<script src="live.js"></script>
+</body>
+</html>
