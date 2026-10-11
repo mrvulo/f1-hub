@@ -59,18 +59,18 @@ const SESSION_DE = { Race: 'Rennen', Qualifying: 'Qualifying', 'Sprint Qualifyin
 const TYRE_LETTER = { SOFT: 'S', MEDIUM: 'M', HARD: 'H', INTERMEDIATE: 'I', WET: 'W' };
 
 // Mini-Sektoren: 24 Segmente pro Runde, 8 je Sektor. Die Status-Codes sind
-// undokumentiert. 2048 und 2064 sind gegen den Live-Feed verifiziert – ein Fahrer
-// auf der Outlap zeigte [2064,2064,2064,2048,2048,…], also Boxenausfahrt gefolgt
-// von abgeschlossenen Segmenten. Die Bestzeit-Codes stehen noch unter Vorbehalt,
-// sie lassen sich erst unter grüner Flagge mit gefahrenen Runden bestätigen.
+// undokumentiert und wurden gegen den Live-Feed gemessen. Vor dem Start traten
+// nur 2048 und 2064 auf (Outlap: [2064,2064,2064,2048,2048,...]), unter grüner
+// Flagge kamen 2049 und 2051 dazu. Das Verhältnis bestätigt die Zuordnung:
+// 2049 x2164 gegen 2051 x82, Lila ist also rund 26-mal seltener als Grün,
+// genau wie es für "schnellste Zeit aller Fahrer" sein muss.
 // Unbekannte Codes bleiben absichtlich grau statt falsch eingefärbt.
 const SEGMENT = {
   0: '',             // noch nicht befahren
-  2048: 'm-yellow',  // verifiziert: Segment abgeschlossen
-  2049: 'm-green',   // unbestätigt: persönliche Bestzeit
-  2051: 'm-purple',  // unbestätigt: Bestzeit aller Fahrer
-  2064: 'm-blue',    // verifiziert: Boxengasse / Outlap
-  2068: 'm-blue',    // unbestätigt: Boxengasse
+  2048: 'm-yellow',  // Segment absolviert
+  2049: 'm-green',   // persönliche Bestzeit
+  2051: 'm-purple',  // Bestzeit aller Fahrer
+  2064: 'm-blue',    // Boxengasse / Outlap
 };
 
 const vals = x => (Array.isArray(x) ? x : x ? Object.values(x) : []);
@@ -220,8 +220,7 @@ function drawLive() {
     </div>
     ${weatherStrip(w)}
     ${active ? '' : `<p class="note">Gerade läuft keine Session. Angezeigt wird der letzte Stand von ${esc(info.Meeting?.Name || '')} – ${esc(SESSION_DE[info.Name] || info.Name || '')}. Sobald die nächste Session startet, erscheint oben im Menü „● Live“.</p>`}
-    <div class="grid live-grid">
-      <div class="card table-wrap"><table class="tower"><thead><tr>
+    <div class="card table-wrap"><table class="tower"><thead><tr>
         <th>Pos</th><th>Fahrer</th>
         <th class="num">${isRace ? 'Abstand' : 'Beste'}</th><th class="num">${isRace ? 'Intervall' : 'Rückstand'}</th>
         <th class="num">Letzte</th>${isRace ? '<th class="num">Beste</th>' : ''}
@@ -230,10 +229,9 @@ function drawLive() {
         <th>Reifen</th><th class="num">${isRace ? 'Stopps' : 'Runden'}</th>
       </tr></thead><tbody>${rows}</tbody></table>
       <p class="small muted" style="margin:8px 0 0"><span class="purple">Lila</span> = schnellste Zeit aller Fahrer, <span class="green">Grün</span> = persönliche Bestzeit. Daten: offizielles F1-Live-Timing.</p></div>
-      <div class="grid" style="align-content:start">
-        <div class="card"><h2>Rennleitung</h2><div class="rc-list">${rcm || '<span class="muted">Keine Meldungen.</span>'}</div></div>
-        ${radio ? `<div class="card"><h2>Boxenfunk</h2><div class="radio-list">${radio}</div></div>` : ''}
-      </div>
+    <div class="grid live-side">
+      <div class="card"><h2>Rennleitung</h2><div class="rc-list">${rcm || '<span class="muted">Keine Meldungen.</span>'}</div></div>
+      ${radio ? `<div class="card"><h2>Boxenfunk</h2><div class="radio-list">${radio}</div></div>` : ''}
     </div>`;
 }
 

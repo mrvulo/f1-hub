@@ -13,9 +13,11 @@
 .live-head .kicker { color: var(--red); font-weight: 700; text-transform: uppercase; letter-spacing: 1px; font-size: 13px; }
 .live-chips { display: flex; gap: 8px; flex-wrap: wrap; }
 .chip { background: var(--panel); border: 1px solid var(--line); border-radius: 20px; padding: 4px 12px; font-size: 14px; white-space: nowrap; }
-.live-grid { grid-template-columns: minmax(0, 2.2fr) minmax(260px, 1fr); }
+/* Tabelle nimmt die volle Breite, Rennleitung und Boxenfunk sitzen darunter.
+   Nebeneinander blieb für die Zeitentabelle zu wenig Platz und erzwang Querscrollen. */
+.live-side { grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); margin-top: 16px; }
 
-.tower td, .tower th { padding: 6px 8px; }
+.tower td, .tower th { padding: 5px 7px; }
 .tower td { font-variant-numeric: tabular-nums; }
 .tower tr.out td { opacity: .45; }
 .tower .sec { font-size: 13px; color: #ffd84d; }
@@ -43,7 +45,7 @@
 .news-img { height: 150px; margin: -16px -16px 8px; border-radius: var(--radius) var(--radius) 0 0; background: var(--panel2) center / cover no-repeat; }
 
 @media (max-width: 1000px) {
-  .live-grid { grid-template-columns: 1fr; }
+  .live-side { grid-template-columns: 1fr; }
 }
 @media (max-width: 600px) {
   .hide-sm { display: none; }
@@ -59,9 +61,9 @@
 .wx .wet b { color: #2f8cff; }
 
 /* ---- Mini-Sektoren ---- */
-.ms { display: flex; gap: 5px; align-items: center; }
+.ms { display: flex; gap: 4px; align-items: center; }
 .ms .g { display: flex; gap: 2px; }
-.ms i { width: 7px; height: 9px; border-radius: 1px; background: var(--line); display: block; }
+.ms i { width: 6px; height: 9px; border-radius: 1px; background: var(--line); display: block; }
 .ms i.m-yellow { background: #ffd12e; }
 .ms i.m-green  { background: #3ddc84; }
 .ms i.m-purple { background: #c26bff; }
