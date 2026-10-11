@@ -73,3 +73,27 @@
 
 @media (max-width: 1250px) { .hide-md { display: none; } }
 @media (max-width: 860px)  { .ms i { width: 5px; } }
+
+/* ---- Stints ---- */
+.live-tabs { display: flex; gap: 4px; margin-bottom: 12px; }
+.live-tabs button {
+  background: var(--panel); border: 1px solid var(--line); color: var(--muted);
+  padding: 6px 18px; border-radius: 20px; font-weight: 600; cursor: pointer; font-size: 14px;
+}
+.live-tabs button.active { background: var(--red); border-color: var(--red); color: #fff; }
+.stint-bar { display: flex; gap: 2px; min-width: 40px; }
+.stint {
+  display: flex; align-items: center; justify-content: center; gap: 4px; min-width: 0;
+  height: 20px; padding: 0 5px; border-radius: 3px; font-size: 11px; font-weight: 700;
+  white-space: nowrap; overflow: hidden; color: #111;
+}
+.st-SOFT { background: #ff3b3b; color: #fff; }
+.st-MEDIUM { background: #ffd12e; }
+.st-HARD { background: #e8e8e8; }
+.st-INTERMEDIATE { background: #39b54a; color: #fff; }
+.st-WET { background: #2f8cff; color: #fff; }
+.st-UNKNOWN { background: var(--panel2); color: var(--muted); }
+/* Schraffur = Reifen war beim Aufziehen schon gelaufen */
+.stint.used { background-image: repeating-linear-gradient(45deg, transparent 0 4px, rgba(0,0,0,.28) 4px 8px); }
+.stint.now { outline: 2px solid var(--text); outline-offset: -2px; }
+.stint-legend { display: flex; gap: 14px; flex-wrap: wrap; margin: 10px 0 0; }

@@ -95,6 +95,13 @@ views.live.after = () => {
       if (!stale(token)) $('#live-root').innerHTML = serverDown();
     }
   };
+  $('#live-root').onclick = e => {
+    const b = e.target.closest('.live-tabs button');
+    if (!b || b.dataset.tab === liveTab) return;
+    liveTab = b.dataset.tab;
+    try { localStorage.setItem('f1:livetab', liveTab); } catch {}
+    drawLive();
+  };
   poll();
   state.timers.push(setInterval(poll, 2000));
   state.timers.push(setInterval(tickClock, 1000));
@@ -176,6 +183,61 @@ function timingRows(d, isRace, isQuali) {
     }).join('');
 }
 
+// ---------------------------------------------------------------- Stints
+let liveTab = (() => { try { return localStorage.getItem('f1:livetab') || 'timing'; } catch { return 'timing'; } })();
+const COMPOUND_DE = { SOFT: 'Soft', MEDIUM: 'Medium', HARD: 'Hard', INTERMEDIATE: 'Intermediate', WET: 'Wet' };
+
+// TimingAppData.Stints enthält die komplette Reifenhistorie; die Zeitentabelle zeigt
+// davon nur den letzten Eintrag.
+//
+// Zwei Eigenheiten der Daten, beide am Live-Feed nachgemessen:
+// TotalLaps zählt die Runden auf dem Reifen einschließlich seiner Vorbelastung, und
+// StartLaps sagt, wie viele davon beim Aufziehen schon drauf waren – gefahren wurde in
+// diesem Stint also die Differenz. Und ein Boxenstopp ohne Reifenwechsel erzeugt einen
+// zusätzlichen Eintrag mit TyresNotChanged="1", während der alte Eintrag weiterzählt:
+// bei einem Fahrer stieg dessen TotalLaps über vier Runden von 20 auf 23, während der
+// neue Eintrag bei 6 stehenblieb. Solche Einträge sind kein zweiter Reifensatz und
+// fliegen raus – sonst zeigt der Verlauf Wechsel an, die nie stattgefunden haben.
+// Mit dieser Regel stimmt die Summe bei allen 22 Fahrern auf höchstens eine Runde.
+function stintRows(d) {
+  const drivers = d.DriverList || {};
+  const app = d.TimingAppData?.Lines || {};
+  const timing = d.TimingData?.Lines || {};
+  const rows = Object.entries(app)
+    .map(([num, ta]) => ({
+      num, drv: drivers[num] || {}, t: timing[num] || {},
+      stints: vals(ta.Stints).filter(s => s.Compound && s.TyresNotChanged !== '1'),
+    }))
+    .sort((a, b) => (+a.t.Position || +a.t.Line || 99) - (+b.t.Position || +b.t.Line || 99));
+  // Alle Zeilen auf denselben Maßstab: sonst bekäme ein nach fünf Runden
+  // ausgefallener Fahrer denselben Balken wie der Führende.
+  const driven = r => r.stints.reduce((n, s) => n + Math.max(0, (+s.TotalLaps || 0) - (+s.StartLaps || 0)), 0);
+  const longest = Math.max(1, ...rows.map(driven));
+  return rows
+    .map(({ num, drv, t, stints }) => {
+      const bar = stints.map((s, i) => {
+        const age = +s.TotalLaps || 0;
+        const before = +s.StartLaps || 0;
+        const laps = Math.max(0, age - before);
+        const used = before > 0 || s.New === 'false';
+        const current = i === stints.length - 1;
+        const title = [COMPOUND_DE[s.Compound] || s.Compound, `${laps} Runden gefahren`,
+          used ? `gebraucht aufgezogen, Reifenalter ${age}` : 'neu',
+          s.LapTime ? `beste Runde ${s.LapTime}` : '']
+          .filter(Boolean).join(' · ');
+        return `<div class="stint st-${esc(s.Compound)}${used ? ' used' : ''}${current ? ' now' : ''}"
+          style="flex:${laps || 1}" title="${esc(title)}">${TYRE_LETTER[s.Compound] || '?'} ${laps}</div>`;
+      }).join('');
+      return `<tr class="${t.Retired || t.KnockedOut ? 'out' : ''}">
+        <td class="pos">${esc(t.Position || '')}</td>
+        <td class="nowrap"><span class="teambar" style="background:#${esc(drv.TeamColour || '888888')}"></span><b>${esc(drv.Tla || num)}</b> <span class="muted small hide-sm">${esc(drv.LastName || '')}</span></td>
+        <td class="num">${stints.length || ''}</td>
+        <td class="num">${t.NumberOfPitStops ?? ''}</td>
+        <td><div class="stint-bar" style="width:${(driven({ stints }) / longest * 100).toFixed(1)}%">${bar || '<span class="muted small">keine Reifendaten</span>'}</div></td>
+      </tr>`;
+    }).join('');
+}
+
 function drawLive() {
   const root = $('#live-root');
   if (!root || !liveData) return;
@@ -189,7 +251,7 @@ function drawLive() {
   const st = d.SessionStatus?.Status;
   const w = d.WeatherData || {};
   const drivers = d.DriverList || {};
-  const rows = timingRows(d, isRace, isQuali);
+  const rows = liveTab === 'timing' ? timingRows(d, isRace, isQuali) : '';
 
   const rcm = [...(d.RaceControlMessages || [])].reverse().map(m => {
     const fc = { GREEN: '#3ddc84', YELLOW: '#ffd12e', 'DOUBLE YELLOW': '#ffd12e', RED: '#ff3b3b', BLUE: '#2f8cff', CHEQUERED: '#fff', CLEAR: '#3ddc84' }[m.Flag] || 'var(--muted)';
@@ -220,6 +282,19 @@ function drawLive() {
     </div>
     ${weatherStrip(w)}
     ${active ? '' : `<p class="note">Gerade läuft keine Session. Angezeigt wird der letzte Stand von ${esc(info.Meeting?.Name || '')} – ${esc(SESSION_DE[info.Name] || info.Name || '')}. Sobald die nächste Session startet, erscheint oben im Menü „● Live“.</p>`}
+    <div class="live-tabs">
+      <button data-tab="timing" class="${liveTab === 'timing' ? 'active' : ''}">Zeiten</button>
+      <button data-tab="stints" class="${liveTab === 'stints' ? 'active' : ''}">Stints</button>
+    </div>
+    ${liveTab === 'stints' ? `
+    <div class="card table-wrap"><table class="tower"><thead><tr>
+        <th>Pos</th><th>Fahrer</th><th class="num">Stints</th><th class="num">Stopps</th>
+        <th>Reifenverlauf <span class="muted small">(Runden auf dem Reifen)</span></th>
+      </tr></thead><tbody>${stintRows(d)}</tbody></table>
+      <div class="stint-legend small muted">
+        ${Object.entries(COMPOUND_DE).map(([k, l]) => `<span><span class="tyre t-${k}">${TYRE_LETTER[k]}</span>${l}</span>`).join('')}
+        <span>Schraffiert = gebraucht aufgezogen · Umrandet = aktueller Reifen</span>
+      </div></div>` : `
     <div class="card table-wrap"><table class="tower"><thead><tr>
         <th>Pos</th><th>Fahrer</th>
         <th class="num">${isRace ? 'Abstand' : 'Beste'}</th><th class="num">${isRace ? 'Intervall' : 'Rückstand'}</th>
@@ -228,7 +303,7 @@ function drawLive() {
         <th class="hide-md">S1</th><th class="hide-md">S2</th><th class="hide-md">S3</th>
         <th>Reifen</th><th class="num">${isRace ? 'Stopps' : 'Runden'}</th>
       </tr></thead><tbody>${rows}</tbody></table>
-      <p class="small muted" style="margin:8px 0 0"><span class="purple">Lila</span> = schnellste Zeit aller Fahrer, <span class="green">Grün</span> = persönliche Bestzeit. Daten: offizielles F1-Live-Timing.</p></div>
+      <p class="small muted" style="margin:8px 0 0"><span class="purple">Lila</span> = schnellste Zeit aller Fahrer, <span class="green">Grün</span> = persönliche Bestzeit. Daten: offizielles F1-Live-Timing.</p></div>`}
     <div class="grid live-side">
       <div class="card"><h2>Rennleitung</h2><div class="rc-list">${rcm || '<span class="muted">Keine Meldungen.</span>'}</div></div>
       ${radio ? `<div class="card"><h2>Boxenfunk</h2><div class="radio-list">${radio}</div></div>` : ''}
