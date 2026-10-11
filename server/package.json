@@ -1,0 +1,9 @@
+{
+  "name": "f1hub-server",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "main": "src/server.js",
+  "scripts": { "start": "node src/server.js" },
+  "dependencies": { "ws": "^8.18.0" }
+}

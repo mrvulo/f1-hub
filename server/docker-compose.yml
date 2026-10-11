@@ -1,0 +1,18 @@
+services:
+  f1hub:
+    build: .
+    container_name: f1hub
+    restart: unless-stopped
+    ports:
+      - "8790:8790"
+    env_file:
+      - .env
+    environment:
+      - TZ=Europe/Berlin
+    # Feste DNS-Server: Dockers interner Resolver übernimmt sonst einen Loopback-Resolver vom Host (siehe Preiswächter)
+    dns:
+      - 1.1.1.1
+      - 9.9.9.9
+    volumes:
+      - ./data:/app/data
+      - ./public:/app/public:ro
