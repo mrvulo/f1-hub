@@ -201,6 +201,7 @@ const COMPOUND_DE = { SOFT: 'Soft', MEDIUM: 'Medium', HARD: 'Hard', INTERMEDIATE
 // Mit dieser Regel stimmt die Summe bei allen 22 Fahrern auf höchstens eine Runde.
 function stintRows(d) {
   const drivers = d.DriverList || {};
+  const pits = d.PitStops || {};
   const app = d.TimingAppData?.Lines || {};
   const timing = d.TimingData?.Lines || {};
   const rows = Object.entries(app)
@@ -233,6 +234,8 @@ function stintRows(d) {
         <td class="nowrap"><span class="teambar" style="background:#${esc(drv.TeamColour || '888888')}"></span><b>${esc(drv.Tla || num)}</b> <span class="muted small hide-sm">${esc(drv.LastName || '')}</span></td>
         <td class="num">${stints.length || ''}</td>
         <td class="num">${t.NumberOfPitStops ?? ''}</td>
+        <td class="nowrap">${(pits[num] || []).map(x =>
+          `<span class="pit"><span class="muted">R${esc(x.lap)}</span> ${esc(x.duration)}&thinsp;s</span>`).join(' ') || ''}</td>
         <td><div class="stint-bar" style="width:${(driven({ stints }) / longest * 100).toFixed(1)}%">${bar || '<span class="muted small">keine Reifendaten</span>'}</div></td>
       </tr>`;
     }).join('');
@@ -289,7 +292,8 @@ function drawLive() {
     ${liveTab === 'stints' ? `
     <div class="card table-wrap"><table class="tower"><thead><tr>
         <th>Pos</th><th>Fahrer</th><th class="num">Stints</th><th class="num">Stopps</th>
-        <th>Reifenverlauf <span class="muted small">(Runden auf dem Reifen)</span></th>
+        <th class="nowrap">Boxengasse <span class="muted small">(Durchfahrt)</span></th>
+        <th>Reifenverlauf <span class="muted small">(gefahrene Runden)</span></th>
       </tr></thead><tbody>${stintRows(d)}</tbody></table>
       <div class="stint-legend small muted">
         ${Object.entries(COMPOUND_DE).map(([k, l]) => `<span><span class="tyre t-${k}">${TYRE_LETTER[k]}</span>${l}</span>`).join('')}
@@ -311,70 +315,20 @@ function drawLive() {
 }
 
 // ---------------------------------------------------------------- News
-// Mehrere Quellen syndizieren denselben Text – Motorsport.com DE und Formel1.de
-// liefern regelmäßig wortgleiche Artikel. Gleiche Links und gleiche Titel fliegen
-// raus. Fast gleiche Titel nur dann, wenn sich die beiden Wortmengen nicht in einem
-// unterscheidenden Begriff trennen: "Samstag-Zeitplan" und "Sonntag-Zeitplan" sind
-// zu 83 % wortgleich und trotzdem zwei verschiedene Artikel.
-const NEWS_DISCRIM = new Set(`monday tuesday wednesday thursday friday saturday sunday
-  montag dienstag mittwoch donnerstag freitag samstag sonntag
-  sprint qualifying quali race rennen grid startaufstellung results ergebnisse
-  preview review vorschau rückblick fp1 fp2 fp3 practice training
-  1 2 3 one two three erste zweite dritte`.split(/\s+/).filter(Boolean));
-
-const newsKey = t => (t || '').toLowerCase()
-  .replace(/[‘’“”'"`]/g, '')
-  .replace(/[^a-z0-9äöüß]+/g, ' ')
-  .trim();
-
-// Bei zwei Fassungen gewinnt die inhaltsreichere – Bild und längerer Teaser
-const newsRich = x => (x.image ? 1 : 0) + (x.summary || '').length;
-
-function dedupeNews(items) {
-  const kept = [], byLink = new Map(), byKey = new Map();
-  for (const it of items) {
-    const key = newsKey(it.title);
-    const words = new Set(key.split(' ').filter(Boolean));
-    let twin = (it.link && byLink.get(it.link)) || (key && byKey.get(key)) || null;
-    if (!twin && words.size) {
-      for (const k of kept) {
-        if (k.it.lang !== it.lang) continue;
-        let both = 0;
-        for (const w of words) if (k.words.has(w)) both++;
-        if (both / (words.size + k.words.size - both) < 0.8) continue;
-        let split = false;
-        for (const w of words) if (!k.words.has(w) && NEWS_DISCRIM.has(w)) split = true;
-        for (const w of k.words) if (!words.has(w) && NEWS_DISCRIM.has(w)) split = true;
-        if (!split) { twin = k.it; break; }
-      }
-    }
-    if (twin) {
-      if (newsRich(it) > newsRich(twin)) Object.assign(twin, it);
-      continue;
-    }
-    kept.push({ it, words });
-    if (it.link) byLink.set(it.link, it);
-    if (key) byKey.set(key, it);
-  }
-  return kept.map(k => k.it);
-}
-
 let newsFilter = (() => { try { return localStorage.getItem('f1:newslang') || 'all'; } catch { return 'all'; } })();
 views.news = async () => {
   if (!SERVER) return `<h1>News</h1>${noServerNote('Der News-Bereich')}`;
   let n;
   try { n = await api('/api/news'); } catch { return `<h1>News</h1>${serverDown()}`; }
   if (!n || !Array.isArray(n.items)) return `<h1>News</h1>${serverDown()}`;
-  const unique = dedupeNews(n.items);
-  const removed = n.items.length - unique.length;
-  const items = unique.filter(x => newsFilter === 'all' || x.lang === newsFilter);
+  const items = n.items.filter(x => newsFilter === 'all' || x.lang === newsFilter);
   const cards = items.map(x => `<a class="card news-card click" href="${esc(x.link)}" target="_blank" rel="noopener">
       ${x.image ? `<div class="news-img" style="background-image:url('${esc(x.image).replace(/'/g, '%27')}')"></div>` : ''}
       <div class="small muted">${esc(x.source)} · ${ago(x.date)}</div>
       <h3>${esc(x.title)}</h3>
       ${x.summary ? `<p class="small muted">${esc(x.summary)}</p>` : ''}</a>`).join('');
   const btn = (k, l) => `<button data-lang="${k}" class="${newsFilter === k ? 'active' : ''}">${l}</button>`;
-  return `<h1>News</h1><p class="sub">${(n.sources || []).map(s => esc(s.name)).join(' · ')} · aktualisiert ${ago(n.updated)}${removed ? ` · ${removed} Doppelte ausgeblendet` : ''}</p>
+  return `<h1>News</h1><p class="sub">${(n.sources || []).map(s => esc(s.name)).join(' · ')} · aktualisiert ${ago(n.updated)}${n.removed ? ` · ${n.removed} Doppelte ausgeblendet` : ''}</p>
     <div class="tabs">${btn('all', 'Alle')}${btn('de', 'Deutsch')}${btn('en', 'Englisch')}</div>
     <div class="grid g3">${cards || '<p class="muted">Keine Artikel.</p>'}</div>`;
 };
