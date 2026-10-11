@@ -48,3 +48,26 @@
 @media (max-width: 600px) {
   .hide-sm { display: none; }
 }
+
+/* ---- Wetterleiste ---- */
+.wx { display: flex; gap: 0; flex-wrap: wrap; background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; }
+.wx div { padding: 6px 14px; border-right: 1px solid var(--line); line-height: 1.25; }
+.wx div:last-child { border-right: 0; }
+.wx span { display: block; font-size: 10px; letter-spacing: 1px; color: var(--muted); text-transform: uppercase; }
+.wx b { font-size: 15px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.wx u { text-decoration: none; font-size: 11px; color: var(--muted); margin-left: 1px; }
+.wx .wet b { color: #2f8cff; }
+
+/* ---- Mini-Sektoren ---- */
+.ms { display: flex; gap: 5px; align-items: center; }
+.ms .g { display: flex; gap: 2px; }
+.ms i { width: 7px; height: 9px; border-radius: 1px; background: var(--line); display: block; }
+.ms i.m-yellow { background: #ffd12e; }
+.ms i.m-green  { background: #3ddc84; }
+.ms i.m-purple { background: #c26bff; }
+.ms i.m-blue   { background: #2f8cff; }
+.ms i.m-red    { background: #ff3b3b; }
+.tower th.ms-h { font-size: 11px; letter-spacing: 1px; }
+
+@media (max-width: 1250px) { .hide-md { display: none; } }
+@media (max-width: 860px)  { .ms i { width: 5px; } }

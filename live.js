@@ -58,6 +58,21 @@ const SESSION_STATUS = { Inactive: 'Noch nicht gestartet', Started: 'Läuft', Ab
 const SESSION_DE = { Race: 'Rennen', Qualifying: 'Qualifying', 'Sprint Qualifying': 'Sprint-Qualifying', Sprint: 'Sprint', 'Practice 1': '1. Training', 'Practice 2': '2. Training', 'Practice 3': '3. Training' };
 const TYRE_LETTER = { SOFT: 'S', MEDIUM: 'M', HARD: 'H', INTERMEDIATE: 'I', WET: 'W' };
 
+// Mini-Sektoren: 24 Segmente pro Runde, 8 je Sektor. Die Status-Codes sind
+// undokumentiert. 2048 und 2064 sind gegen den Live-Feed verifiziert – ein Fahrer
+// auf der Outlap zeigte [2064,2064,2064,2048,2048,…], also Boxenausfahrt gefolgt
+// von abgeschlossenen Segmenten. Die Bestzeit-Codes stehen noch unter Vorbehalt,
+// sie lassen sich erst unter grüner Flagge mit gefahrenen Runden bestätigen.
+// Unbekannte Codes bleiben absichtlich grau statt falsch eingefärbt.
+const SEGMENT = {
+  0: '',             // noch nicht befahren
+  2048: 'm-yellow',  // verifiziert: Segment abgeschlossen
+  2049: 'm-green',   // unbestätigt: persönliche Bestzeit
+  2051: 'm-purple',  // unbestätigt: Bestzeit aller Fahrer
+  2064: 'm-blue',    // verifiziert: Boxengasse / Outlap
+  2068: 'm-blue',    // unbestätigt: Boxengasse
+};
+
 const vals = x => (Array.isArray(x) ? x : x ? Object.values(x) : []);
 const timeCls = o => (o?.OverallFastest ? 'purple' : o?.PersonalFastest ? 'green' : '');
 
@@ -96,24 +111,31 @@ function remaining() {
 }
 function tickClock() { const el = $('#live-clock'); if (el) el.textContent = remaining(); }
 
-function drawLive() {
-  const root = $('#live-root');
-  if (!root || !liveData) return;
-  const { data: d, active, connected, staticBase } = liveData;
-  const info = d.SessionInfo || {};
-  if (!info.Key) { root.innerHTML = `<h1>Live-Timing</h1><p class="muted">Noch keine Daten vom Live-Timing.</p>`; return; }
-  const type = info.Type;
-  const isRace = type === 'Race';
-  const isQuali = type === 'Qualifying';
-  const ts = TRACK[d.TrackStatus?.Status] || [d.TrackStatus?.Message || '–', 'var(--muted)'];
-  const st = d.SessionStatus?.Status;
-  const w = d.WeatherData || {};
+// WeatherData liefert sieben Felder – bisher wurden drei davon angezeigt
+const COMPASS = ['N', 'NO', 'O', 'SO', 'S', 'SW', 'W', 'NW'];
+function weatherStrip(w) {
+  if (!w || w.AirTemp == null) return '';
+  const cell = (label, value, unit, cls = '') =>
+    `<div class="${cls}"><span>${label}</span><b>${esc(value)}</b>${unit ? `<u>${unit}</u>` : ''}</div>`;
+  const wet = w.Rainfall && w.Rainfall !== '0';
+  return `<div class="wx">
+    ${cell('Luft', w.AirTemp, '°C')}
+    ${cell('Strecke', w.TrackTemp, '°C')}
+    ${cell('Luftfeuchte', w.Humidity, '%')}
+    ${cell('Wind', w.WindSpeed, `m/s ${COMPASS[Math.round(((+w.WindDirection || 0) % 360) / 45) % 8]}`)}
+    ${cell('Druck', w.Pressure, 'hPa')}
+    ${cell('Regen', wet ? 'Ja' : 'Nein', '', wet ? 'wet' : '')}
+  </div>`;
+}
+
+// Eine Tabellenzeile je Fahrer. Aus drawLive ausgelagert, damit der Zeilenbau
+// ohne DOM getestet werden kann und drawLive wieder lesbar bleibt.
+function timingRows(d, isRace, isQuali) {
   const drivers = d.DriverList || {};
   const timing = d.TimingData?.Lines || {};
   const app = d.TimingAppData?.Lines || {};
   const part = d.TimingData?.SessionPart;
-
-  const rows = Object.entries(timing)
+  return Object.entries(timing)
     .map(([num, t]) => ({ num, t, drv: drivers[num] || {}, app: app[num] || {} }))
     .sort((a, b) => (+a.t.Position || +a.t.Line || 99) - (+b.t.Position || +b.t.Line || 99))
     .map(({ num, t, drv, app: ta }) => {
@@ -134,17 +156,40 @@ function drawLive() {
         gap = esc(t.BestLapTime?.Value || '');
         interval = esc(t.TimeDiffToFastest || '');
       }
-      const sectors = vals(t.Sectors).map(s => `<td class="sec ${timeCls(s)}">${esc(s.Value || '')}</td>`).join('');
+      const secList = vals(t.Sectors);
+      const sectors = secList.map(s => `<td class="sec hide-md ${timeCls(s)}">${esc(s.Value || '')}</td>`).join('');
+      const mini = secList.map((s, i) => {
+        const segs = vals(s.Segments).map(g => `<i class="${SEGMENT[g.Status] || ''}"></i>`).join('');
+        return `<div class="g" title="Sektor ${i + 1}${s.Value ? ` – ${esc(s.Value)}` : ''}">${segs}</div>`;
+      }).join('');
       return `<tr class="${t.Retired || t.KnockedOut ? 'out' : ''}">
         <td class="pos">${esc(t.Position || '')}</td>
         <td><span class="teambar" style="background:${col}"></span><b>${esc(drv.Tla || num)}</b> <span class="muted small hide-sm">${esc(drv.LastName || '')}</span> ${flags}</td>
         <td class="num">${gap}</td><td class="num">${interval}</td>
         <td class="num ${timeCls(t.LastLapTime)}">${esc(t.LastLapTime?.Value || '')}</td>
+        ${isRace ? `<td class="num ${timeCls(t.BestLapTime)}">${esc(t.BestLapTime?.Value || '')}</td>` : ''}
+        <td><div class="ms">${mini}</div></td>
         ${sectors}
         <td class="nowrap">${tyre}</td>
         ${isRace ? `<td class="num">${t.NumberOfPitStops ?? ''}</td>` : `<td class="num">${t.NumberOfLaps ?? ''}</td>`}
       </tr>`;
     }).join('');
+}
+
+function drawLive() {
+  const root = $('#live-root');
+  if (!root || !liveData) return;
+  const { data: d, active, connected, staticBase } = liveData;
+  const info = d.SessionInfo || {};
+  if (!info.Key) { root.innerHTML = `<h1>Live-Timing</h1><p class="muted">Noch keine Daten vom Live-Timing.</p>`; return; }
+  const type = info.Type;
+  const isRace = type === 'Race';
+  const isQuali = type === 'Qualifying';
+  const ts = TRACK[d.TrackStatus?.Status] || [d.TrackStatus?.Message || '–', 'var(--muted)'];
+  const st = d.SessionStatus?.Status;
+  const w = d.WeatherData || {};
+  const drivers = d.DriverList || {};
+  const rows = timingRows(d, isRace, isQuali);
 
   const rcm = [...(d.RaceControlMessages || [])].reverse().map(m => {
     const fc = { GREEN: '#3ddc84', YELLOW: '#ffd12e', 'DOUBLE YELLOW': '#ffd12e', RED: '#ff3b3b', BLUE: '#2f8cff', CHEQUERED: '#fff', CLEAR: '#3ddc84' }[m.Flag] || 'var(--muted)';
@@ -171,16 +216,18 @@ function drawLive() {
         <div class="chip" style="border-color:${ts[1]};color:${ts[1]}">⚑ ${esc(ts[0])}</div>
         ${lap ? `<div class="chip">${lap}</div>` : ''}
         ${d.ExtrapolatedClock ? `<div class="chip">⏱ <b id="live-clock">${remaining()}</b></div>` : ''}
-        ${w.AirTemp ? `<div class="chip">🌡 ${esc(w.AirTemp)}° / Strecke ${esc(w.TrackTemp)}°</div>` : ''}
-        ${w.Rainfall && w.Rainfall !== '0' ? '<div class="chip">🌧 Regen</div>' : ''}
       </div>
     </div>
+    ${weatherStrip(w)}
     ${active ? '' : `<p class="note">Gerade läuft keine Session. Angezeigt wird der letzte Stand von ${esc(info.Meeting?.Name || '')} – ${esc(SESSION_DE[info.Name] || info.Name || '')}. Sobald die nächste Session startet, erscheint oben im Menü „● Live“.</p>`}
     <div class="grid live-grid">
       <div class="card table-wrap"><table class="tower"><thead><tr>
         <th>Pos</th><th>Fahrer</th>
         <th class="num">${isRace ? 'Abstand' : 'Beste'}</th><th class="num">${isRace ? 'Intervall' : 'Rückstand'}</th>
-        <th class="num">Letzte</th><th>S1</th><th>S2</th><th>S3</th><th>Reifen</th><th class="num">${isRace ? 'Stopps' : 'Runden'}</th>
+        <th class="num">Letzte</th>${isRace ? '<th class="num">Beste</th>' : ''}
+        <th class="ms-h">Mini-Sektoren</th>
+        <th class="hide-md">S1</th><th class="hide-md">S2</th><th class="hide-md">S3</th>
+        <th>Reifen</th><th class="num">${isRace ? 'Stopps' : 'Runden'}</th>
       </tr></thead><tbody>${rows}</tbody></table>
       <p class="small muted" style="margin:8px 0 0"><span class="purple">Lila</span> = schnellste Zeit aller Fahrer, <span class="green">Grün</span> = persönliche Bestzeit. Daten: offizielles F1-Live-Timing.</p></div>
       <div class="grid" style="align-content:start">
